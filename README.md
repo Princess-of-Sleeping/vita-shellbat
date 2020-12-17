@@ -13,6 +13,6 @@ ux0:tai/shellbat.suprx
 ```
 
 # Credits
-nowrep - for original shellbat
+nowrep - for original [shellbat](<https://github.com/nowrep/vita-shellbat>)
 
 cuevavirus - for Idea of TAI_NEXT
