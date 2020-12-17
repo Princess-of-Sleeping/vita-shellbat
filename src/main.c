@@ -26,6 +26,7 @@
 #include <psp2/power.h>
 #include <psp2/sysmodule.h>
 #include <taihen.h>
+#include "taihen_extra.h"
 
 #define TAI_NEXT(this_func, hook, ...) ({ \
   (((struct _tai_hook_user *)hook)->next) != 0 ? \
@@ -45,48 +46,36 @@ SceWChar16 *sce_paf_private_wcsncpy(SceWChar16 *dst, const SceWChar16 *src, SceS
 int sce_paf_private_swprintf(SceWChar16 *dst, SceSize len, SceWChar16 *fmt, ...);
 int scePafWidgetSetFontSize(void *widget, float size, int unk0, int pos, int len);
 
-void *pBatteryWidget;
 SceWChar16 cached_strings[0x64];
-
-int pos_percent;
-int prev_percent_battery;
-
-int pos_percent_cpu;
 SceKernelSysClock prevIdleClock[4];
 
-tai_hook_ref_t ScePafWidget_FB7FE189_ref;
-int ScePafWidget_FB7FE189_patch(void *pWidget, int flags, void *ctx, int a4){
-
-	int res = TAI_CONTINUE(int, ScePafWidget_FB7FE189_ref, pWidget, flags, ctx, a4);
-
-	if(ctx != NULL && flags == 0x800009 && *(uint32_t *)(*(void **)(ctx + 8) + 0x14C) == 0x89FFAD08){
-		pBatteryWidget = *(void **)(ctx + 8);
-	}
-
-	return res;
-}
+int pos_percent_cpu;
+int pos_percent_battery;
+int prev_percent_battery;
 
 tai_hook_ref_t scePafWidgetSetFontSize_ref;
 int scePafWidgetSetFontSize_patch(void *pWidget, float size, int unk0, int pos, SceSize len){
 
-	if(pWidget == pBatteryWidget && size == 16.0f)
+	uint32_t id = *(uint32_t *)(pWidget + 0x14C);
+
+	if(id == 0x89FFAD08 && size == 16.0f)
 		return 0;
 
 	int res = TAI_NEXT(scePafWidgetSetFontSize_patch, scePafWidgetSetFontSize_ref, pWidget, size, unk0, pos, len);
 
-	if(pWidget == pBatteryWidget && size == 22.0f){
+	if(id == 0x89FFAD08 && size == 22.0f){
 
 		SceWChar16 *pMStr = sce_paf_private_wcschr(cached_strings, *L"M");
 		if(pMStr != NULL && pMStr != cached_strings && ((pMStr[-1] == *L"A" || pMStr[-1] == *L"P"))){
-			scePafWidgetSetFontSize(pBatteryWidget, 16.0f, 1, (int)(pMStr - cached_strings) - 2, 3);
+			scePafWidgetSetFontSize(pWidget, 16.0f, 1, (int)(pMStr - cached_strings) - 2, 3);
 		}
 
-		if(pos_percent != 0){
-			scePafWidgetSetFontSize(pBatteryWidget, 16.0f, 1, pos_percent, 1);
+		if(pos_percent_battery != 0){
+			scePafWidgetSetFontSize(pWidget, 16.0f, 1, pos_percent_battery, 1);
 		}
 
 		if(pos_percent_cpu != 0){
-			scePafWidgetSetFontSize(pBatteryWidget, 16.0f, 1, pos_percent_cpu, 1);
+			scePafWidgetSetFontSize(pWidget, 16.0f, 1, pos_percent_cpu, 1);
 		}
 	}
 
@@ -143,7 +132,7 @@ int scePafGetTimeDataStrings_patch(ScePafDateTime *data, SceWChar16 *dst, SceSiz
 
 		res = sce_paf_private_swprintf(&dst[out_len], len, L" %d%%", percent);
 		out_len += res; len -= res;
-		pos_percent = out_len - 1;
+		pos_percent_battery = out_len - 1;
 	}
 
 	sce_paf_private_wcsncpy(cached_strings, dst, sizeof(cached_strings) / 2);
@@ -159,7 +148,6 @@ int sceSysmoduleLoadModuleInternalWithArg_patch(SceSysmoduleInternalModuleId id,
 	if(res >= 0 && id == SCE_SYSMODULE_INTERNAL_PAF){
 		HookImport("SceShell", 0x3D643CE8, 0xF8D1975F, scePafGetTimeDataStrings);
 		HookImport("SceShell", 0x073F8C68, 0x39B15B98, scePafWidgetSetFontSize);
-		HookImport("SceShell", 0x073F8C68, 0xFB7FE189, ScePafWidget_FB7FE189);
 	}
 
 	return res;
@@ -168,7 +156,15 @@ int sceSysmoduleLoadModuleInternalWithArg_patch(SceSysmoduleInternalModuleId id,
 void _start() __attribute__ ((weak, alias("module_start")));
 int module_start(SceSize args, void *argp){
 
-	HookImport("SceShell", 0x03FCF19D, 0xC3C26339, sceSysmoduleLoadModuleInternalWithArg);
+	tai_module_info_t info;
+	info.size = sizeof(info);
+
+	if(taiGetModuleInfo("ScePaf", &info) < 0){
+		HookImport("SceShell", 0x03FCF19D, 0xC3C26339, sceSysmoduleLoadModuleInternalWithArg);
+	}else{
+		HookImportNonEnso("SceShell", "ScePaf", "ScePafMisc", 0x3D643CE8, 0xF8D1975F, scePafGetTimeDataStrings);
+		HookImportNonEnso("SceShell", "ScePaf", "ScePafWidget", 0x073F8C68, 0x39B15B98, scePafWidgetSetFontSize);
+	}
 
 	return SCE_KERNEL_START_SUCCESS;
 }
